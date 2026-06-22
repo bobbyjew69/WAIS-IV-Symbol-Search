@@ -1,7 +1,7 @@
 import { SYMBOLS } from './symbols.js';
 import { NORMS } from './norms.js';
 import { SCALED_SCORES } from './scaled-scores.js';
-import { random, shuffle } from './array.js';
+import { shuffle } from './array.js';
 
 const TIME_LIMIT_SECONDS = 120;
 
@@ -10,6 +10,11 @@ const PRACTICE_COUNT = 2;
 
 /** Must be an even number. */
 const MAX_PUZZLE_COUNT = 60;
+
+/** Puzzles shown per page. */
+const PER_PAGE = 14;
+
+const OPTION_COUNT = 5;
 
 globalThis.RAW_SCORE = 0;
 
@@ -22,7 +27,8 @@ document.addEventListener('DOMContentLoaded', main);
 
 async function main() {
   updateTextboxes();
-  
+  setupPencil();
+
   $('#years').addEventListener('input', updateTextboxes);
 
   await practice();
@@ -37,8 +43,9 @@ async function main() {
 }
 
 function start() {
-  $('.panel:not(.hidden) > h4').remove();
-  $('.start').remove();
+  $('.panel:not(.hidden) > h4')?.remove();
+  $('.start')?.remove();
+  $('.instructions').classList.add('hidden');
   $('.notif').classList.remove('fade-out');
   $('.notif').style.color = 'black';
 
@@ -48,44 +55,62 @@ function start() {
     ...new Array(MAX_PUZZLE_COUNT / 2).fill(false),
   ]);
 
-  let puzzleNumber = 1;
+  const puzzles = coinFlips.map(generatePuzzle);
 
-  const coinFlip = coinFlips[puzzleNumber - 1];
-  refreshPuzzle(coinFlip);
+  const test = $('#test');
+  const pageCount = Math.ceil(MAX_PUZZLE_COUNT / PER_PAGE);
+  let page = 0;
 
   const state = { isCountingDown: true };
-  countdown(state);
 
-  $('.row').classList.remove('disabled');
-
-  document.addEventListener('click', ({ target: el }) => {
-    if (!el.matches('.option')) {
-      return;
-    }
-
-    const isCorrect = el === findCorrectElement();
-
-    RAW_SCORE += isCorrect ? 1 : -1;
-
+  function onScore(delta) {
+    RAW_SCORE += delta;
     updateTextboxes();
+  }
 
-    // if debugging on localhost
-    if (location.port) {
-      console.log(`#${puzzleNumber} - ${isCorrect ? 'CORRECT!' : 'Wrong.'}`);
-      if (!isCorrect) alert('Wrong!');
+  function finish() {
+    state.isCountingDown = false;
+    test.replaceChildren();
+    $('.notif').textContent = 'Test complete!';
+  }
+
+  function renderPage() {
+    test.replaceChildren();
+
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    const from = page * PER_PAGE;
+    const to = Math.min(from + PER_PAGE, MAX_PUZZLE_COUNT);
+    for (let i = from; i < to; i++) {
+      grid.append(renderQuestion(puzzles[i], i + 1, { onScore }));
     }
+    test.append(grid);
 
-    puzzleNumber++;
+    const nav = document.createElement('div');
+    nav.className = 'nav';
 
-    if (puzzleNumber > MAX_PUZZLE_COUNT) {
-      $('.row').classList.add('disabled');
-      $('.notif').textContent = 'Test complete!';
-      state.isCountingDown = false;
-      return;
-    }
+    const next = document.createElement('button');
+    next.id = 'next';
+    next.textContent = page < pageCount - 1 ? 'NEXT' : 'FINISH';
+    next.addEventListener('click', () => {
+      if (page < pageCount - 1) {
+        page++;
+        renderPage();
+        window.scrollTo(0, 0);
+      } else {
+        finish();
+      }
+    });
 
-    const coinFlip = coinFlips[puzzleNumber - 1];
-    refreshPuzzle(coinFlip);
+    nav.append(next);
+    test.append(nav);
+  }
+
+  renderPage();
+
+  countdown(state, () => {
+    test.classList.add('disabled');
+    $('.notif').textContent = "Time's up!";
   });
 }
 
@@ -99,16 +124,12 @@ function practice() {
       ...new Array(PRACTICE_COUNT / 2).fill(false),
     ]);
 
-    const callback = async function ({ target: el }) {
-      if (!el.matches('.option')) {
-        return;
-      }
+    const test = $('#test');
 
-      const isCorrect = el === findCorrectElement();
-
+    async function onAnswer(correct) {
       const notifElement = $('.notif');
 
-      if (isCorrect) {
+      if (correct) {
         notifElement.textContent = 'Good job!';
         notifElement.style.color = 'green';
       } else {
@@ -123,73 +144,293 @@ function practice() {
       currentPracticeNumber++;
 
       if (currentPracticeNumber > PRACTICE_COUNT) {
-        document.removeEventListener('click', callback);
-
-        $('.row').classList.add('disabled');
-
+        test.replaceChildren();
         resolve();
-      } else {
-        $(
-          'h4'
-        ).textContent = `Practice #${currentPracticeNumber} of ${PRACTICE_COUNT}`;
-        refreshPuzzle(coinFlips[1]);
+        return;
       }
-    };
 
-    document.addEventListener('click', callback);
+      $('h4').textContent =
+        `Practice #${currentPracticeNumber} of ${PRACTICE_COUNT}`;
+      await waitFor(700);
+      show();
+    }
 
-    refreshPuzzle(coinFlips[0]);
+    function show() {
+      test.replaceChildren();
+      const puzzle = generatePuzzle(coinFlips[currentPracticeNumber - 1]);
+      test.append(
+        renderQuestion(puzzle, currentPracticeNumber, {
+          onAnswer,
+          allowChange: false,
+        })
+      );
+    }
+
+    show();
   });
 }
 
 /**
- * @param {Boolean} hasMatch - Whether one of the objective symbols matches one of the option symbols.
+ * @param {Boolean} hasMatch - Whether an objective matches one of the options.
+ * @returns {{ objectives: SSSymbol[], options: SSSymbol[], hasMatch: Boolean }}
  */
-function refreshPuzzle(hasMatch = true) {
+function generatePuzzle(hasMatch = true) {
   const pool = shuffle(SYMBOLS);
-  const optionCount = $$('.option:not(.no)').length;
-  const options = pool.slice(0, optionCount);
+  const options = pool.slice(0, OPTION_COUNT);
 
-  shuffle($$('.option:not(.no)')).forEach((el, i) => {
-    const option = options[i];
-    el.dataset.symbol = option.symbol;
-    el.dataset.degrees = option.degrees;
-    el.style.setProperty('--deg', `${option.degrees}deg`);
-  });
-
-  const sliceIndex = hasMatch ? optionCount - 1 : optionCount;
+  const sliceIndex = hasMatch ? OPTION_COUNT - 1 : OPTION_COUNT;
   const objectives = pool.slice(sliceIndex, sliceIndex + 2);
 
-  shuffle($$('.objective')).forEach((el, i) => {
-    const objective = objectives[i];
-    el.dataset.symbol = objective.symbol;
-    el.dataset.degrees = objective.degrees;
-    el.style.setProperty('--deg', `${objective.degrees}deg`);
-  });
+  return { objectives: shuffle(objectives), options: shuffle(options), hasMatch };
+}
+
+function symbolCell(className, symbol) {
+  const el = document.createElement('div');
+  el.className = className;
+  el.dataset.symbol = symbol.symbol;
+  el.dataset.degrees = symbol.degrees;
+  el.style.setProperty('--deg', `${symbol.degrees}deg`);
+  return el;
 }
 
 /**
+ * @param {{ objectives, options, hasMatch }} puzzle
+ * @param {Number} number - 1-based puzzle number.
+ * @param {Object} handlers
+ * @param {(delta: Number) => void} [handlers.onScore] - Called with the score change. Used when the answer can change.
+ * @param {(correct: Boolean) => void} [handlers.onAnswer] - Called once on first answer. Used for the locked practice flow.
+ * @param {Boolean} [handlers.allowChange=true] - Whether the answer can be changed after the first click.
  * @returns {HTMLElement}
  */
-function findCorrectElement() {
-  const options = $$('.option:not(.no)').map(({ dataset }) => dataset);
-  const objectives = $$('.objective').map(({ dataset }) => dataset);
+function renderQuestion(puzzle, number, { onScore, onAnswer, allowChange = true } = {}) {
+  const row = document.createElement('div');
+  row.className = 'qrow';
 
-  const correctIndex = options.findIndex((option) =>
-    objectives.find(
-      ({ symbol, degrees }) =>
-        symbol === option.symbol && degrees === option.degrees
-    )
-  );
+  const num = document.createElement('span');
+  num.className = 'qnum';
+  num.textContent = number;
+  row.append(num);
 
-  return correctIndex === -1 ? $('.no') : $$('.option')[correctIndex];
+  puzzle.objectives.forEach((o) => row.append(symbolCell('objective', o)));
+
+  const divider = document.createElement('div');
+  divider.className = 'divider';
+  row.append(divider);
+
+  puzzle.options.forEach((o) => row.append(symbolCell('option', o)));
+
+  const pad = document.createElement('div');
+  pad.className = 'answerpad';
+
+  const yesLabel = document.createElement('div');
+  yesLabel.className = 'lbl yes';
+  yesLabel.textContent = 'YES';
+
+  const noLabel = document.createElement('div');
+  noLabel.className = 'lbl no';
+  noLabel.textContent = 'NO';
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 460;
+  canvas.height = 80;
+  const mid = canvas.width / 2;
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#222';
+
+  pad.append(yesLabel, noLabel, canvas);
+
+  /** Pixel count above which a side counts as inked. */
+  const INK_THRESHOLD = 8;
+
+  /** Current selection: null, true (YES) or false (NO). */
+  let current = null;
+
+  function toCanvas(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    return [
+      ((clientX - rect.left) * canvas.width) / rect.width,
+      ((clientY - rect.top) * canvas.height) / rect.height,
+    ];
+  }
+
+  function inkOnSide(fromX, toX) {
+    const data = ctx.getImageData(fromX, 0, toX - fromX, canvas.height).data;
+    let count = 0;
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i] > 0) count++;
+    }
+    return count;
+  }
+
+  function markResult(choice) {
+    pad.classList.remove('chose-yes', 'chose-no');
+    pad.classList.add(choice ? 'chose-yes' : 'chose-no');
+  }
+
+  // Drawing controller, driven by the global pen so a stroke can begin
+  // before the pointer reaches this pad (press early, drag in).
+  pad._draw = {
+    locked: false,
+    lastX: 0,
+    lastY: 0,
+
+    start(clientX, clientY) {
+      if (this.locked) return;
+      const [x, y] = toCanvas(clientX, clientY);
+      this.lastX = x;
+      this.lastY = y;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 0.01, y);
+      ctx.stroke();
+    },
+
+    move(clientX, clientY) {
+      if (this.locked) return;
+      const [x, y] = toCanvas(clientX, clientY);
+      ctx.beginPath();
+      ctx.moveTo(this.lastX, this.lastY);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      this.lastX = x;
+      this.lastY = y;
+    },
+
+    evaluate() {
+      const yesInk = inkOnSide(0, mid);
+      const noInk = inkOnSide(mid, canvas.width);
+      const yesOn = yesInk > INK_THRESHOLD;
+      const noOn = noInk > INK_THRESHOLD;
+
+      let choice = null;
+      if (yesOn && noOn) {
+        // Both inked: the side with fewer pixels (the clean line) wins.
+        choice = yesInk <= noInk;
+      } else if (yesOn) {
+        choice = true;
+      } else if (noOn) {
+        choice = false;
+      } else {
+        return;
+      }
+
+      markResult(choice);
+
+      if (!allowChange) {
+        if (this.locked) return;
+        this.locked = true;
+        current = choice;
+        onAnswer?.(choice === puzzle.hasMatch);
+        return;
+      }
+
+      if (choice === current) return;
+
+      if (current !== null) {
+        const previousCorrect = current === puzzle.hasMatch;
+        onScore?.(previousCorrect ? -1 : 1);
+      }
+      current = choice;
+      onScore?.(choice === puzzle.hasMatch ? 1 : -1);
+    },
+  };
+
+  row.append(pad);
+  return row;
+}
+
+const PENCIL_SVG = `
+<svg width="30" height="30" viewBox="0 0 30 30" xmlns="http://www.w3.org/2000/svg">
+  <g transform="rotate(45 15 15)">
+    <rect x="13" y="3" width="4" height="3" fill="#e8a0b0" stroke="#333" stroke-width="0.7"/>
+    <rect x="13" y="6" width="4" height="15" fill="#f4c430" stroke="#333" stroke-width="0.7"/>
+    <polygon points="13,21 17,21 15,27" fill="#f0d9a8" stroke="#333" stroke-width="0.7"/>
+    <polygon points="14.2,24 15.8,24 15,27" fill="#333"/>
+  </g>
+</svg>`;
+
+function setupPencil() {
+  const pencil = document.createElement('div');
+  pencil.id = 'pencil';
+  pencil.innerHTML = PENCIL_SVG;
+  document.body.append(pencil);
+
+  /** Pad locked for the current press, or null. */
+  let active = null;
+  let pressed = false;
+  /** Whether the pen is currently down on the locked pad. */
+  let penDown = false;
+
+  function padAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    return el ? el.closest('.answerpad') : null;
+  }
+
+  function handle(x, y) {
+    if (!pressed) return;
+    const pad = padAt(x, y);
+
+    // First pad touched during this press captures the whole stroke.
+    if (active === null) {
+      if (pad) {
+        active = pad;
+        active._draw.start(x, y);
+        penDown = true;
+      }
+      return;
+    }
+
+    // Locked: only the captured pad reacts. Other boxes are ignored, so a
+    // single swing can never bleed into a neighbour.
+    if (pad === active) {
+      if (penDown) {
+        active._draw.move(x, y);
+      } else {
+        active._draw.start(x, y);
+        penDown = true;
+      }
+    } else {
+      // Pen wandered off the locked pad: lift it, but keep the lock.
+      penDown = false;
+    }
+  }
+
+  document.addEventListener('pointerdown', (event) => {
+    pressed = true;
+    penDown = false;
+    active = null;
+    handle(event.clientX, event.clientY);
+  });
+
+  document.addEventListener('pointermove', (event) => {
+    pencil.style.left = `${event.clientX}px`;
+    pencil.style.top = `${event.clientY}px`;
+    pencil.style.display = 'block';
+    handle(event.clientX, event.clientY);
+  });
+
+  function release() {
+    pressed = false;
+    penDown = false;
+    if (active) {
+      active._draw.evaluate();
+      active = null;
+    }
+  }
+
+  document.addEventListener('pointerup', release);
+  document.addEventListener('pointercancel', release);
 }
 
 async function waitFor(milliseconds) {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function countdown(state) {
+async function countdown(state, onTimeUp) {
   const startTime = new Date();
   while (state.isCountingDown) {
     const millisecondsRemaining =
@@ -198,8 +439,8 @@ async function countdown(state) {
     $('.notif').textContent = timestamp;
 
     if (millisecondsRemaining <= 0) {
-      $('.row').classList.add('disabled');
-      $('.notif').textContent = "Time's up!";
+      state.isCountingDown = false;
+      onTimeUp?.();
       return;
     }
 

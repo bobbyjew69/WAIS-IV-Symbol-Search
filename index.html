@@ -18,9 +18,9 @@
         <div class="panel">
           <p>Resize this window to a comfortable size.</p>
           <p>The 2 symbols to the left (on gray background) are objectives.</p>
-          <p>Find the symbol on white background that matches either of the objectives, and click it.</p>
+          <p>Decide if any symbol on white background matches either objective.</p>
           <p><b>There can be at most 1 match.</b></p>
-          <p>If there is no match, click <span class="no-example">NO</span></p>
+          <p>If there is a match, click <span class="yes-example">YES</span> &mdash; if not, click <span class="no-example">NO</span></p>
           <h4>Practice #1 of 2</h4>
         </div>
         <div class="panel hidden">
@@ -28,23 +28,14 @@
           <p>Be accurate, but as fast as possible.</p>
           <p><u>There is a penalty for wrong answers.</u></p>
           <p><b>There can be at most 1 match.</b></p>
-          <p>If there is no match, click <span class="no-example">NO</span></p>
+          <p>Click <span class="yes-example">YES</span> if there is a match, <span class="no-example">NO</span> if none.</p>
+          <p>14 puzzles per page &mdash; click <b>NEXT</b> for the next page.</p>
           <h4>Click BEGIN when you're ready to start.</h4>
           <div class="start"><button id="start">BEGIN</button></div>
         </div>
       </div>
       <div class="notif">&nbsp;</div>
-      <div class="row">
-        <div class="objective"></div>
-        <div class="objective"></div>
-        <div></div>
-        <div class="option"></div>
-        <div class="option"></div>
-        <div class="option"></div>
-        <div class="option"></div>
-        <div class="option"></div>
-        <div class="option no"></div>
-      </div>
+      <div id="test"></div>
       <div class="input">
         <label for="years">Your age in years:
           <input id="years" type="number" value="16" step="1" min="16" max="79" />
