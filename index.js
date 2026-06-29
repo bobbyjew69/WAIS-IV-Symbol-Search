@@ -11,8 +11,15 @@ const PRACTICE_COUNT = 2;
 /** Must be an even number. */
 const MAX_PUZZLE_COUNT = 60;
 
-/** Puzzles shown per page. */
+/** Puzzles shown per page (desktop, two columns). */
 const PER_PAGE = 14;
+
+/** Below this width: single column, tap buttons. */
+const MOBILE_BREAKPOINT = '(max-width: 600px)';
+const isMobile = () => window.matchMedia(MOBILE_BREAKPOINT).matches;
+
+/** Puzzles per page on mobile (single column). */
+const MOBILE_PER_PAGE = 7;
 
 const OPTION_COUNT = 5;
 
@@ -58,7 +65,8 @@ function start() {
   const puzzles = coinFlips.map(generatePuzzle);
 
   const test = $('#test');
-  const pageCount = Math.ceil(MAX_PUZZLE_COUNT / PER_PAGE);
+  const perPage = computePerPage();
+  const pageCount = Math.ceil(MAX_PUZZLE_COUNT / perPage);
   let page = 0;
 
   const state = { isCountingDown: true };
@@ -79,8 +87,8 @@ function start() {
 
     const grid = document.createElement('div');
     grid.className = 'grid';
-    const from = page * PER_PAGE;
-    const to = Math.min(from + PER_PAGE, MAX_PUZZLE_COUNT);
+    const from = page * perPage;
+    const to = Math.min(from + perPage, MAX_PUZZLE_COUNT);
     for (let i = from; i < to; i++) {
       grid.append(renderQuestion(puzzles[i], i + 1, { onScore }));
     }
@@ -112,6 +120,11 @@ function start() {
     test.classList.add('disabled');
     $('.notif').textContent = "Time's up!";
   });
+}
+
+/** Desktop: 14 over two columns. Mobile: 7 in a single column. */
+function computePerPage() {
+  return isMobile() ? MOBILE_PER_PAGE : PER_PAGE;
 }
 
 function practice() {
@@ -158,12 +171,15 @@ function practice() {
     function show() {
       test.replaceChildren();
       const puzzle = generatePuzzle(coinFlips[currentPracticeNumber - 1]);
-      test.append(
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      grid.append(
         renderQuestion(puzzle, currentPracticeNumber, {
           onAnswer,
           allowChange: false,
         })
       );
+      test.append(grid);
     }
 
     show();
@@ -220,124 +236,149 @@ function renderQuestion(puzzle, number, { onScore, onAnswer, allowChange = true 
   puzzle.options.forEach((o) => row.append(symbolCell('option', o)));
 
   const pad = document.createElement('div');
-  pad.className = 'answerpad';
-
-  const yesLabel = document.createElement('div');
-  yesLabel.className = 'lbl yes';
-  yesLabel.textContent = 'YES';
-
-  const noLabel = document.createElement('div');
-  noLabel.className = 'lbl no';
-  noLabel.textContent = 'NO';
-
-  const canvas = document.createElement('canvas');
-  canvas.width = 460;
-  canvas.height = 80;
-  const mid = canvas.width / 2;
-
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#222';
-
-  pad.append(yesLabel, noLabel, canvas);
-
-  /** Pixel count above which a side counts as inked. */
-  const INK_THRESHOLD = 8;
 
   /** Current selection: null, true (YES) or false (NO). */
   let current = null;
-
-  function toCanvas(clientX, clientY) {
-    const rect = canvas.getBoundingClientRect();
-    return [
-      ((clientX - rect.left) * canvas.width) / rect.width,
-      ((clientY - rect.top) * canvas.height) / rect.height,
-    ];
-  }
-
-  function inkOnSide(fromX, toX) {
-    const data = ctx.getImageData(fromX, 0, toX - fromX, canvas.height).data;
-    let count = 0;
-    for (let i = 3; i < data.length; i += 4) {
-      if (data[i] > 0) count++;
-    }
-    return count;
-  }
+  /** Once locked (practice flow), the answer can't change. */
+  let locked = false;
 
   function markResult(choice) {
     pad.classList.remove('chose-yes', 'chose-no');
     pad.classList.add(choice ? 'chose-yes' : 'chose-no');
   }
 
-  // Drawing controller, driven by the global pen so a stroke can begin
-  // before the pointer reaches this pad (press early, drag in).
-  pad._draw = {
-    locked: false,
-    lastX: 0,
-    lastY: 0,
+  // Shared by the drawing pad (desktop) and the tap buttons (mobile).
+  function applyChoice(choice) {
+    markResult(choice);
 
-    start(clientX, clientY) {
-      if (this.locked) return;
-      const [x, y] = toCanvas(clientX, clientY);
-      this.lastX = x;
-      this.lastY = y;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x + 0.01, y);
-      ctx.stroke();
-    },
-
-    move(clientX, clientY) {
-      if (this.locked) return;
-      const [x, y] = toCanvas(clientX, clientY);
-      ctx.beginPath();
-      ctx.moveTo(this.lastX, this.lastY);
-      ctx.lineTo(x, y);
-      ctx.stroke();
-      this.lastX = x;
-      this.lastY = y;
-    },
-
-    evaluate() {
-      const yesInk = inkOnSide(0, mid);
-      const noInk = inkOnSide(mid, canvas.width);
-      const yesOn = yesInk > INK_THRESHOLD;
-      const noOn = noInk > INK_THRESHOLD;
-
-      let choice = null;
-      if (yesOn && noOn) {
-        // Both inked: the side with fewer pixels (the clean line) wins.
-        choice = yesInk <= noInk;
-      } else if (yesOn) {
-        choice = true;
-      } else if (noOn) {
-        choice = false;
-      } else {
-        return;
-      }
-
-      markResult(choice);
-
-      if (!allowChange) {
-        if (this.locked) return;
-        this.locked = true;
-        current = choice;
-        onAnswer?.(choice === puzzle.hasMatch);
-        return;
-      }
-
-      if (choice === current) return;
-
-      if (current !== null) {
-        const previousCorrect = current === puzzle.hasMatch;
-        onScore?.(previousCorrect ? -1 : 1);
-      }
+    if (!allowChange) {
+      if (locked) return;
+      locked = true;
       current = choice;
-      onScore?.(choice === puzzle.hasMatch ? 1 : -1);
-    },
-  };
+      onAnswer?.(choice === puzzle.hasMatch);
+      return;
+    }
+
+    if (choice === current) return;
+
+    if (current !== null) {
+      const previousCorrect = current === puzzle.hasMatch;
+      onScore?.(previousCorrect ? -1 : 1);
+    }
+    current = choice;
+    onScore?.(choice === puzzle.hasMatch ? 1 : -1);
+  }
+
+  if (isMobile()) {
+    pad.className = 'answerbtns';
+
+    const yesBtn = document.createElement('button');
+    yesBtn.type = 'button';
+    yesBtn.className = 'ansbtn yes';
+    yesBtn.textContent = 'YES';
+    yesBtn.addEventListener('click', () => applyChoice(true));
+
+    const noBtn = document.createElement('button');
+    noBtn.type = 'button';
+    noBtn.className = 'ansbtn no';
+    noBtn.textContent = 'NO';
+    noBtn.addEventListener('click', () => applyChoice(false));
+
+    pad.append(yesBtn, noBtn);
+  } else {
+    pad.className = 'answerpad';
+
+    const yesLabel = document.createElement('div');
+    yesLabel.className = 'lbl yes';
+    yesLabel.textContent = 'YES';
+
+    const noLabel = document.createElement('div');
+    noLabel.className = 'lbl no';
+    noLabel.textContent = 'NO';
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 460;
+    canvas.height = 80;
+    const mid = canvas.width / 2;
+
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#222';
+
+    pad.append(yesLabel, noLabel, canvas);
+
+    /** Pixel count above which a side counts as inked. */
+    const INK_THRESHOLD = 8;
+
+    function toCanvas(clientX, clientY) {
+      const rect = canvas.getBoundingClientRect();
+      return [
+        ((clientX - rect.left) * canvas.width) / rect.width,
+        ((clientY - rect.top) * canvas.height) / rect.height,
+      ];
+    }
+
+    function inkOnSide(fromX, toX) {
+      const data = ctx.getImageData(fromX, 0, toX - fromX, canvas.height).data;
+      let count = 0;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] > 0) count++;
+      }
+      return count;
+    }
+
+    // Drawing controller, driven by the global pen so a stroke can begin
+    // before the pointer reaches this pad (press early, drag in).
+    pad._draw = {
+      lastX: 0,
+      lastY: 0,
+
+      start(clientX, clientY) {
+        if (locked) return;
+        const [x, y] = toCanvas(clientX, clientY);
+        this.lastX = x;
+        this.lastY = y;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + 0.01, y);
+        ctx.stroke();
+      },
+
+      move(clientX, clientY) {
+        if (locked) return;
+        const [x, y] = toCanvas(clientX, clientY);
+        ctx.beginPath();
+        ctx.moveTo(this.lastX, this.lastY);
+        ctx.lineTo(x, y);
+        ctx.stroke();
+        this.lastX = x;
+        this.lastY = y;
+      },
+
+      evaluate() {
+        const yesInk = inkOnSide(0, mid);
+        const noInk = inkOnSide(mid, canvas.width);
+        const yesOn = yesInk > INK_THRESHOLD;
+        const noOn = noInk > INK_THRESHOLD;
+
+        let choice = null;
+        if (yesOn && noOn) {
+          // Both inked: the side with fewer pixels (the clean line) wins.
+          choice = yesInk <= noInk;
+        } else if (yesOn) {
+          choice = true;
+        } else if (noOn) {
+          choice = false;
+        } else {
+          return;
+        }
+
+        applyChoice(choice);
+      },
+    };
+  }
 
   row.append(pad);
   return row;

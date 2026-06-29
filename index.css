@@ -149,13 +149,13 @@ html {
 
   .answerpad .lbl.yes {
     left: 0;
-    color: green;
+    color: #333;
     border-right: 1px solid #ccc;
   }
 
   .answerpad .lbl.no {
     right: 0;
-    color: #b00000;
+    color: #333;
   }
 
   .answerpad canvas {
@@ -166,11 +166,11 @@ html {
   }
 
   .answerpad.chose-yes .lbl.yes {
-    background: #c8f0c8;
+    background: #ccc;
   }
 
   .answerpad.chose-no .lbl.no {
-    background: #f5c2c2;
+    background: #ccc;
   }
 
   #pencil {
@@ -208,7 +208,7 @@ html {
     font-weight: bold;
     margin-left: 0.25em;
     padding: 0.1em;
-    color: green;
+    color: #333;
   }
 
   .no-example {
@@ -216,7 +216,7 @@ html {
     font-weight: bold;
     margin-left: 0.25em;
     padding: 0.1em;
-    color: #b00000;
+    color: #333;
   }
   
   .flashing {
@@ -313,4 +313,89 @@ html {
   
   .start {
     text-align: center;
+  }
+
+  .answerbtns {
+    display: flex;
+    flex: 1;
+    gap: 6px;
+    margin-left: 8px;
+  }
+
+  .ansbtn {
+    flex: 1;
+    height: 56px;
+    font-weight: bold;
+    font-size: 14px;
+    border: 1px solid #888;
+    background: #f2f2f2;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .ansbtn.yes {
+    color: #333;
+  }
+
+  .ansbtn.no {
+    color: #333;
+  }
+
+  .answerbtns.chose-yes .ansbtn.yes {
+    background: #ccc;
+  }
+
+  .answerbtns.chose-no .ansbtn.no {
+    background: #ccc;
+  }
+
+  .m-break {
+    display: none;
+  }
+
+  @media (max-width: 600px) {
+    html {
+      cursor: auto;
+    }
+
+    .m-break {
+      display: block;
+      margin-bottom: 0.4em;
+    }
+
+    #pencil {
+      display: none !important;
+    }
+
+    /* Capped at 12px near 370px wide; below that the rows shrink with the
+       viewport (steeper than 1:1) so the row never overflows and the
+       fixed-size YES/NO buttons keep their width. */
+    #test {
+      font-size: clamp(6px, calc(7vw - 14px), 12px);
+    }
+
+    .grid {
+      grid-auto-flow: row;
+      grid-template-columns: 1fr;
+      grid-template-rows: none;
+      column-gap: 0;
+      width: 100%;
+    }
+
+    .qrow {
+      gap: 2px;
+      margin: 5px 0;
+      padding: 1px 0;
+    }
+
+    .qnum {
+      width: auto;
+      min-width: 1.2em;
+      margin-right: 0;
+    }
+
+    .answerbtns {
+      margin-left: 4px;
+      margin-right: 6px;
+    }
   }
